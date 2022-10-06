@@ -225,6 +225,11 @@ await bot.send_group_forward_message(group_id=..., messages=...)
 
 ```python
 async def send_forward_message(bot: Bot, event: Event, messages: list):
+    """
+    发送转发消息
+
+    messages: 消息节点列表
+    """
     if (id_ := getattr(event, "group_id", None)) is not None:
         await bot.send_group_forward_msg(group_id=id_, messages=messages)
     elif (id_ := getattr(event, "user_id", None)) is not None:
@@ -265,6 +270,13 @@ async def send_forward_message(bot: Bot, event: Event, messages: list):
 
 ```python
 def gocq_node(uid: int, name: str, msg: Message):
+    """
+    构造消息节点
+
+    uid: QQ号，决定显示的头像
+    name: 显示的名字
+    msg: 消息内容
+    """
     return {
         "type": "node",
         "data": {
