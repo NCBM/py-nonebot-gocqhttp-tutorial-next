@@ -174,4 +174,118 @@ say_a()
 nb run
 ```
 
-当看到打印的 aaaaaaaaaaaa 的时候，大功告成！
+当看到打印的一串 aaa 的时候，大功告成！
+
+## 3. 发送合并转发消息
+
+当你的消息过多过长时，你可能需要将多条消息合并发送。然而，合并发送可不是个简单的事。
+
+我们看 OneBot v11 内部的关于合并转发的消息段代码：
+
+```python
+class MessageSegment:
+    ...
+
+    @staticmethod
+    def node(id_: int) -> "MessageSegment":
+        return MessageSegment("node", {"id": str(id_)})
+
+    @staticmethod
+    def node_custom(
+        user_id: int, nickname: str, content: Union[str, "Message"]
+    ) -> "MessageSegment":
+        return MessageSegment(
+            "node", {"user_id": str(user_id), "nickname": nickname, "content": content}
+        )
+```
+
+再对比 go-cqhttp 提供的字段：
+
+|参数名|类型|说明|
+|----|----|----|
+|id|int32|转发消息id|
+|name|string|发送者显示名字|
+|uin|int64|发送者QQ号|
+|content|message|具体消息|
+
+可以看到 OneBot v11 提供的消息节点是**不兼容** go-cqhttp 的，并且 go-cqhttp 的合并转发不能以普通方式发送。
+
+### 如何发送合并转发消息
+
+答案是：调用 API。
+
+```python
+# 私聊
+await bot.send_private_forward_message(user_id=..., messages=...)
+# 群
+await bot.send_group_forward_message(group_id=..., messages=...)
+```
+
+或者我们把它包装一下：
+
+```python
+async def send_forward_message(bot: Bot, event: Event, messages: list):
+    if (id_ := getattr(event, "group_id", None)) is not None:
+        await bot.send_group_forward_msg(group_id=id_, messages=messages)
+    elif (id_ := getattr(event, "user_id", None)) is not None:
+        await bot.send_private_forward_msg(user_id=id_, messages=messages)
+    else:
+        raise Exception("Invalid event! Please call API directly.")
+```
+
+然后只要把多个消息节点传入即可。
+
+### 消息节点及构造
+
+已有合并转发的单个消息节点是这样的：
+
+```json
+{
+    "type": "node",
+    "data": {
+        "id": ...
+    }
+}
+```
+
+自定义合并转发的单个消息节点是这样的：
+
+```json
+{
+    "type": "node",
+    "data": {
+        "name": "消息发送者A",
+        "uin": "10086",
+        "content": ...
+    }
+}
+```
+
+这里提供了一个构造消息节点的方式：
+
+```python
+def gocq_node(uid: int, name: str, msg: Message):
+    return {
+        "type": "node",
+        "data": {
+            "name": name,
+            "uin": uid,
+            "content": msg
+        }
+    }
+```
+
+将正确构造的消息节点放在一个列表里发送即可。
+
+### 合并转发示例
+
+```python
+@x.handle()
+async def xxx(bot: Bot, event: MessageEvent):
+    msg = [
+        Message("阿巴阿巴"),
+        Message("你现在不能游荡，周围有怪物在休息。"),
+        Message(MessageSegment.image(Path("test.img")))
+    ]
+    await send_forward_message(bot, event, [gocq_node(event.self_id, "阿巴", x) for x in msg])
+```
